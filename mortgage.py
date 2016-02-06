@@ -47,12 +47,14 @@ for m in range(1, months + 1):
         days1 = december31 - prev_pay_date
         days1 = days1.days
         p1 = days1 / days_in_year(prev_pay_date.year)
+        interest_payment1 = round(float( current_principal * interest_rate * p1), 2)
         
         days2 = pay_date - december31
         days2 = days2.days
-        p2 = days2 / days_in_year(pay_date.year)
-                
-        interest_payment = round(float( current_principal * interest_rate * (p1 + p2) ), 2)
+        p2 = days2 / days_in_year(pay_date.year)        
+        interest_payment2 = round(float( current_principal * interest_rate * p2 ), 2)
+        
+        interest_payment = interest_payment1 + interest_payment2
     else:
         if m == 1: # first payment
             d = pay_date - start_date
@@ -63,8 +65,9 @@ for m in range(1, months + 1):
         
         interest_payment = round(float(current_principal * interest_rate * days) / float(days_in_year(pay_date.year)), 2)
         
-        if m == 240:
+        if m == months: # last payment
             monthly_payment = current_principal + interest_payment
+                  
     
     principal_payment = round(float(monthly_payment - interest_payment), 2)
      
@@ -72,6 +75,6 @@ for m in range(1, months + 1):
     
     payments[m] = Payment(pay_date, interest_payment, principal_payment, current_principal)
 
-#for k, v in islice(payments.items(), 88):
+#for k, v in islice(payments.items(), 45):
 for k, v in payments.items():
     print(str(v))
