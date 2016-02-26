@@ -99,7 +99,6 @@ class Mortgage(object):
 
         current_principal = self.total_principal
         first_monthly_payment = monthly_payment = self.calc_monthly_payment(current_principal, self.total_months)
-        print(monthly_payment)
 
         payments = []
         periods = []
@@ -128,8 +127,7 @@ class Mortgage(object):
                         non_reg_pay.current_principal = current_principal
                         non_reg_pay.principal_payment = round(non_reg_pay.payment, 2) - p1
 
-                        # в этом периоде больше за основной долг не платим
-                        period.principal_paid = True if not non_reg_pay.payment_in_regular_date else False
+                        period.principal_paid = True # в этом периоде больше за основной долг не платим
                         period.add_payment(non_reg_pay)
 
                         if current_principal > 0:
