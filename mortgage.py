@@ -5,6 +5,8 @@ from dateutil.relativedelta import relativedelta
 import calendar
 from itertools import islice
 import math
+from decimal import Decimal
+from money import Money
 
 # how much days in the year
 def days_in_year(year):
@@ -47,10 +49,10 @@ class Period(object):
 
 class Mortgage(object):
     def __init__(self, principal, interest, months, start_date, non_reg_payments, mode):
-        self.total_principal = principal
+        self.total_principal = Money(principal, 'RUB')
         self.interest = interest
-        self.interest_rate = float(interest / 100)
-        self.monthly_interest = float(self.interest_rate / 12)
+        self.interest_rate = Decimal(interest / 100)
+        self.monthly_interest = Decimal(self.interest_rate / 12)
         self.mode1 = mode # если True, каждый месяц добавляем в досрочку разницу между текущим ежемесячным платежём и первоначальным
 
         # срок кредита
@@ -60,7 +62,7 @@ class Mortgage(object):
         self.planned_non_regular_payments = non_reg_payments
 
     def calc_monthly_payment(self, principal, months):
-        return round(float(principal * (self.monthly_interest / (1 - (1 + self.monthly_interest) ** (- months)))), 2)
+        return Money(round(principal.amount * (self.monthly_interest / (1 - (1 + self.monthly_interest) ** (- months))), 2), 'RUB')
 
     def find_reqular_payment(self, start, end):
         lst = []
@@ -77,20 +79,20 @@ class Mortgage(object):
         
             days1 = december31 - prev_pay_date
             days1 = days1.days
-            p1 = days1 / days_in_year(prev_pay_date.year)
-            interest_payment1 = round(float( principal * self.interest_rate * p1), 2)
+            p1 = Decimal(days1 / days_in_year(prev_pay_date.year))
+            interest_payment1 = Money(round(principal.amount * self.interest_rate * p1, 2), 'RUB')
         
             days2 = pay_date - december31
             days2 = days2.days
-            p2 = days2 / days_in_year(pay_date.year)        
-            interest_payment2 = round(float( principal * self.interest_rate * p2 ), 2)
+            p2 = Decimal(days2 / days_in_year(pay_date.year))
+            interest_payment2 = Money(round(principal.amount * self.interest_rate * p2, 2), 'RUB')
         
             interest_payment = interest_payment1 + interest_payment2
         else:    
             d = pay_date - prev_pay_date
             days = d.days
         
-            interest_payment = round(float(principal * self.interest_rate * days) / float(days_in_year(pay_date.year)), 2)
+            interest_payment = Money(round(principal.amount * self.interest_rate * days / days_in_year(pay_date.year), 2), 'RUB')
         
         return interest_payment
 
@@ -113,19 +115,17 @@ class Mortgage(object):
                 if non_reg_pay and not non_reg_pay.payment_in_regular_date:
                     # считаем набежавшие проценты от последнего платежа до даты досрочки
                     p1 = self.calc_interest_payment(non_reg_pay.date, cur_period, current_principal)
-                    p1 = round(p1, 2)
 
                     if non_reg_pay.payment < p1:
                         pass # не хватает для выплаты процентов
                     else:
                         # обновим остаток долга с учётом процентов
                         current_principal -= non_reg_pay.payment - p1
-                        current_principal = round(current_principal, 2)
 
                         # обновим инфу о платеже и добавим её в список платежей
                         non_reg_pay.interest_payment = p1
                         non_reg_pay.current_principal = current_principal
-                        non_reg_pay.principal_payment = round(non_reg_pay.payment, 2) - p1
+                        non_reg_pay.principal_payment = non_reg_pay.payment - p1
 
                         period.principal_paid = True # в этом периоде больше за основной долг не платим
                         period.add_payment(non_reg_pay)
@@ -137,15 +137,15 @@ class Mortgage(object):
 
                             if self.mode1:
                                 # вот эту разницу будем добавлять в досрочку в дату очередного регулярного платежа
-                                v = round(first_monthly_payment - monthly_payment, 2)
+                                v = first_monthly_payment - monthly_payment
                                 if v < 10000:
                                     v = 10000
                                 else:
-                                    v = math.ceil(v / 1000) * 1000
+                                    v = math.ceil(v / 1000) * 1000 # округлим до тысячи в большую сторону
 
                                 if v > current_principal: # осталось заплатить меньше, чем получившаяся разница
-                                    interest_payment = round(self.calc_interest_payment(end_period + relativedelta(months=1), cur_period + relativedelta(months=1), current_principal), 2)
-                                    principal_payment = round(float(monthly_payment - interest_payment), 2)
+                                    interest_payment = self.calc_interest_payment(end_period + relativedelta(months=1), cur_period + relativedelta(months=1), current_principal)
+                                    principal_payment = monthly_payment - interest_payment
                                     v = current_principal - principal_payment
                                     self.planned_non_regular_payments.append(NonRegularPayment(end_period + relativedelta(months=1), v, 0, v, 0, True))
                                 else:
@@ -156,18 +156,17 @@ class Mortgage(object):
     
             # регулярный платёж
 
-            interest_payment = round(self.calc_interest_payment(end_period, cur_period, current_principal), 2)
+            interest_payment = self.calc_interest_payment(end_period, cur_period, current_principal)
 
             if m == self.total_months and monthly_payment > current_principal: # last payment
-                principal_payment = round(current_principal, 2)
+                principal_payment = current_principal
                 monthly_payment = interest_payment + principal_payment
             elif not period.principal_paid:
-                principal_payment = round(float(monthly_payment - interest_payment), 2)
+                principal_payment = monthly_payment - interest_payment
             else:
                 principal_payment = 0
 
             current_principal -= principal_payment
-            current_principal = round(current_principal, 2)
 
             period.add_payment(Payment(end_period, interest_payment + principal_payment, interest_payment, principal_payment, current_principal))
             period.principal_paid = True
@@ -176,7 +175,6 @@ class Mortgage(object):
             for non_reg_pay in non_reg_payments:
                 if non_reg_pay and non_reg_pay.payment_in_regular_date:
                     current_principal -= non_reg_pay.payment
-                    current_principal = round(current_principal, 2)
 
                     non_reg_pay.current_principal = current_principal
                     non_reg_pay.principal_payment = non_reg_pay.payment
@@ -191,21 +189,21 @@ class Mortgage(object):
 
                 if self.mode1:
                     # вот эту разницу будем добавлять в досрочку в дату очередного регулярного платежа
-                    v = round(first_monthly_payment - monthly_payment, 2)
+                    v = first_monthly_payment - monthly_payment
                     v = math.ceil(v / 1000) * 1000 # округлим до тысячи в большую сторону
                     v += 1000
 
                     if v > current_principal: # осталось заплатить меньше, чем получившаяся разница
                         # скорректируем платёж
-                        interest_payment = round(self.calc_interest_payment(end_period + relativedelta(months=1), cur_period + relativedelta(months=1), current_principal), 2)
-                        principal_payment = round(float(monthly_payment - interest_payment), 2)
+                        interest_payment = self.calc_interest_payment(end_period + relativedelta(months=1), cur_period + relativedelta(months=1), current_principal)
+                        principal_payment = monthly_payment - interest_payment
                         v = current_principal - principal_payment
                         self.planned_non_regular_payments.append(NonRegularPayment(end_period + relativedelta(months=1), v, 0, v, 0, True))
                     else:
                         self.planned_non_regular_payments.append(NonRegularPayment(end_period + relativedelta(months=1), v, 0, v, 0, True))
 
             periods.append(period)
-            if current_principal == 0:
+            if current_principal == Money(0, 'RUB'):
                 break
 
             cur_period = end_period
