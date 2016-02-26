@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 
 import datetime
 from dateutil.relativedelta import relativedelta
@@ -164,7 +164,7 @@ class Mortgage(object):
             elif not period.principal_paid:
                 principal_payment = monthly_payment - interest_payment
             else:
-                principal_payment = 0
+                principal_payment = Money(0, 'RUB')
 
             current_principal -= principal_payment
 
@@ -212,7 +212,7 @@ class Mortgage(object):
 
 
 def make_non_reg_payment(year, month, day, sum):
-    return NonRegularPayment(datetime.date(year, month, day), round(sum, 2), 0, 0, 0, True if day == 18 else False)
+    return NonRegularPayment(datetime.date(year, month, day), Money(round(sum, 2), 'RUB'), 0, 0, 0, True if day == 18 else False)
 
 m1 = Mortgage(
     float(4900000.), float(12.4), 12*20, datetime.date(2012, 4, 18),
@@ -233,14 +233,6 @@ m1 = Mortgage(
     True
 )
 
-m2 = Mortgage(
-    float(4900000.), float(12.4), 12*20, datetime.date(2012, 4, 18),
-    [
-        #NonRegularPayment(datetime.date(2016, 1, 15), round(float(800000.), 2), 0, 0, 0, False),
-    ],
-    False
-)
-
 def calc_interest_payments(year, periods):
     s = 0
     for p in periods:
@@ -251,9 +243,9 @@ def calc_interest_payments(year, periods):
     return s
 periods1 = m1.calc()
 #periods2 = m2.calc()
-for p in periods1:
-    for pay in p.payments:
-        print(str(pay))
+#for p in periods1:
+#    for pay in p.payments:
+#        print(str(pay))
 
 #print(round(calc_interest_payments(2012, periods1), 2))
 #print(round(calc_interest_payments(2013, periods1), 2))
