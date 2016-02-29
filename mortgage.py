@@ -40,6 +40,11 @@ class Period(object):
     def add_payment(self, payment):
         self.payments.append(payment)
 
+class Result(object):
+    def __init__(self):
+        self.payments = defaultdict(list)
+        self.year_interest_payments = defaultdict(Decimal)
+
 class Mortgage(object):
     def __init__(self, interest, months, start_date):
         self.interest = interest
@@ -63,7 +68,7 @@ class Mortgage(object):
         # первый месяц в году, т.е. январь
         # в этом случае надо немного по-другому считать
         days_in_year = self.leap_years_cache[self.start_date.year - pay_date.year]
-        if pay_date.month == 1:
+        if pay_date.month == 1 and prev_pay_date.month == 12:
             december31 = datetime.date(prev_pay_date.year, 12, 31)
         
             days1 = december31 - prev_pay_date
@@ -76,14 +81,12 @@ class Mortgage(object):
             p2 = Decimal(days2 / days_in_year)
             interest_payment2 = Decimal(round(principal * self.interest_rate * p2, 2))
         
-            interest_payment = interest_payment1 + interest_payment2
-        else:    
+            return [(prev_pay_date.year, interest_payment1), (pay_date.year, interest_payment2)]
+        else:
             d = pay_date - prev_pay_date
             days = d.days
         
-            interest_payment = Decimal(round(principal * self.interest_rate * days / days_in_year, 2))
-        
-        return interest_payment
+            return [(pay_date.year, Decimal(round(principal * self.interest_rate * days / days_in_year, 2)))]
 
     def is_pay_in_regular_date(self, pay):
         return pay.date.day == self.start_date.day
@@ -92,7 +95,7 @@ class Mortgage(object):
         current_principal = principal
         monthly_payment = self.calc_monthly_payment(current_principal, self.total_months)
 
-        payments = defaultdict(list)
+        result = Result()
         cur_period = self.cached_calendar[0 if initial_month == None else initial_month]
 
         for m in range(1 if initial_month == None else initial_month + 1, self.total_months + 1):
@@ -110,7 +113,7 @@ class Mortgage(object):
                     non_reg_pay.current_principal = current_principal
                     non_reg_pay.principal_payment = non_reg_pay.payment
                     non_reg_pay.interest_payment = 0
-                    payments[non_reg_pay.date].append(non_reg_pay)
+                    result.payments[non_reg_pay.date].append(non_reg_pay)
 
                     if current_principal == 0:
                         break
@@ -120,7 +123,10 @@ class Mortgage(object):
                     monthly_payment = self.calc_monthly_payment(current_principal, left_months)
                 else:
                     # считаем набежавшие проценты от последнего платежа до даты досрочки
-                    p = self.calc_interest_payment(non_reg_pay.date, cur_period, current_principal)
+                    p = 0
+                    for i in self.calc_interest_payment(non_reg_pay.date, cur_period, current_principal):
+                        p += i[1]
+                        result.year_interest_payments[i[0]] += i[1]
 
                     if non_reg_pay.payment < p:
                         pass # не хватает для выплаты процентов
@@ -137,7 +143,7 @@ class Mortgage(object):
                         non_reg_pay.principal_payment = non_reg_pay.payment - p
 
                         principal_paid = True # в этом периоде больше за основной долг не платим
-                        payments[non_reg_pay.date].append(non_reg_pay)
+                        result.payments[non_reg_pay.date].append(non_reg_pay)
 
                         if current_principal == 0:
                             break
@@ -152,8 +158,10 @@ class Mortgage(object):
                 break
 
             # регулярный платёж
-
-            interest_payment = self.calc_interest_payment(end_period, cur_period, current_principal)
+            interest_payment = 0
+            for i in self.calc_interest_payment(end_period, cur_period, current_principal):
+                interest_payment += i[1]
+                result.year_interest_payments[i[0]] += i[1]
 
             if m == self.total_months and monthly_payment > current_principal: # last payment
                 principal_payment = current_principal
@@ -167,14 +175,14 @@ class Mortgage(object):
 
             payment = RegularPayment(end_period, interest_payment + principal_payment, interest_payment, principal_payment, current_principal)
             principal_paid = True
-            payments[payment.date].append(payment)
+            result.payments[payment.date].append(payment)
 
             if current_principal == 0:
                 break
 
             cur_period = end_period
 
-        return payments
+        return result
 
 
 def make_non_reg_payment(year, month, day, sum):
@@ -208,10 +216,10 @@ def calc():
     non_reg_payments[(2016, 3)].append(make_non_reg_payment(2016, 2, 18, 10000))
 
     initial_month = None
-    final_payments = defaultdict(list)
+    result = None
     while True:
-        final_payments = m.calc(initial_principal, non_reg_payments, initial_month)
-        date, delta, principal = sim(m, initial_monthly_payment, final_payments, next_pay_date)
+        result = m.calc(initial_principal, non_reg_payments, initial_month)
+        date, delta, principal = sim(m, initial_monthly_payment, result.payments, next_pay_date)
         if date is None:
             break
 
@@ -219,7 +227,7 @@ def calc():
         #initial_month = diff_dates(next_pay_date, start_date)
 
         next_pay_date = date
-    return final_payments    
+    return result
 
 def sim(mortgage, initial_monthly_payment, payments, date):
 
@@ -236,17 +244,18 @@ def sim(mortgage, initial_monthly_payment, payments, date):
 
 def print_payments(payments):
     s1 = 0 # сколько уплатим банку по процентам
-    s2 = 0
     for k, v in sorted(payments.items()):
         for p in v:
             s1 += p.interest_payment
-            s2 += p.principal_payment
             print(p)
-    print(s1)
-    print(s2)
+    print("Total interest payment: %s" % s1)
 
 if __name__ == '__main__':
 
     # 2026-05-18 - best result
     # 5224535.66 - total interests payment
-    print_payments(calc())
+    r = calc()
+    print_payments(r.payments)
+    print("Interest payments by years:")
+    for k, v in sorted(r.year_interest_payments.items()):
+        print("%s - %s" % (k, v))
