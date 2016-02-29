@@ -199,8 +199,9 @@ def calc():
 
     start_date = datetime.date(2012, 4, 18)
     m = Mortgage(12.4, 12*20, start_date)
-    principal = 4900000
-    initial_monthly_payment = m.calc_monthly_payment(principal, 12*20)
+    initial_principal = 4900000
+    total_months = 12*20
+    initial_monthly_payment = m.calc_monthly_payment(initial_principal, total_months)
     next_pay_date = datetime.date(2016, 3, 18)
     non_reg_payments = defaultdict(list)
     non_reg_payments[(2016, 1)].append(make_non_reg_payment(2016, 1, 15, 800000))
@@ -209,7 +210,7 @@ def calc():
     initial_month = None
     final_payments = defaultdict(list)
     while True:
-        final_payments = m.calc(4900000, non_reg_payments, initial_month)
+        final_payments = m.calc(initial_principal, non_reg_payments, initial_month)
         date, delta, principal = sim(m, initial_monthly_payment, final_payments, next_pay_date)
         if date is None:
             break
@@ -233,12 +234,7 @@ def sim(mortgage, initial_monthly_payment, payments, date):
             return next_pay_date, delta, pay.current_principal
     return None, None, None
 
-if __name__ == '__main__':
-
-    # 2026-05-18 19609.41 - best result
-    # 5224535.66 - total interests payment
-
-    payments = calc()
+def print_payments(payments):
     s1 = 0 # сколько уплатим банку по процентам
     s2 = 0
     for k, v in sorted(payments.items()):
@@ -248,3 +244,9 @@ if __name__ == '__main__':
             print(p)
     print(s1)
     print(s2)
+
+if __name__ == '__main__':
+
+    # 2026-05-18 - best result
+    # 5224535.66 - total interests payment
+    print_payments(calc())
