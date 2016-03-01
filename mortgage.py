@@ -184,6 +184,8 @@ class Mortgage(object):
 def make_non_reg_payment(year, month, day, sum):
     return NonRegularPayment(datetime.date(year, month, day), Decimal(round(sum, 2)), 0, 0, 0)
 
+def add_non_reg_payment(payments, reg_pay_day, year, month, day, sum):
+    payments[(year, month if day < reg_pay_day else month + 1)].append(make_non_reg_payment(year, month, day, sum))
 
 def calc_interest_payments(year, periods):
     s = 0
@@ -208,21 +210,26 @@ def calc():
     initial_monthly_payment = m.calc_monthly_payment(initial_principal, total_months)
     next_pay_date = datetime.date(2016, 3, 18)
     non_reg_payments = defaultdict(list)
-    non_reg_payments[(2016, 1)].append(make_non_reg_payment(2016, 1, 15, 800000))
-    non_reg_payments[(2016, 3)].append(make_non_reg_payment(2016, 2, 18, 10000))
+    add_non_reg_payment(non_reg_payments, start_date.day, 2016, 1, 15, 800000)
+    add_non_reg_payment(non_reg_payments, start_date.day, 2016, 2, 18, 10000)
 
-    initial_month = None
     result = None
     while True:
-        result = m.calc(initial_principal, non_reg_payments, initial_month)
+        result = m.calc(initial_principal, non_reg_payments)
         date, delta, principal = sim(m, initial_monthly_payment, result.payments, next_pay_date)
         if date is None:
             break
 
         non_reg_payments[(date.year, date.month)].append(NonRegularPayment(next_pay_date, delta, 0, 0, 0))
-        #initial_month = diff_dates(next_pay_date, start_date)
+        
+        # учёт налогового вычета
+        if next_pay_date == datetime.date(next_pay_date.year, 5, 18):
+            v = round(result.year_interest_payments[next_pay_date.year - 1] * Decimal("0.13"), 2)
+            v = math.ceil(v / 1000) * 1000
+            non_reg_payments[(date.year, date.month)].append(NonRegularPayment(next_pay_date, v, 0, 0, 0))
 
         next_pay_date = date
+
     return result
 
 def sim(mortgage, initial_monthly_payment, payments, date):
@@ -248,8 +255,8 @@ def print_payments(payments):
 
 if __name__ == '__main__':
 
-    # 2026-05-18 - best result
-    # 5224535.66 - total interests payment
+    # 2024-09-18 - best result
+    # 4587670.65 - total interests payment
     r = calc()
     print_payments(r.payments)
     print("Interest payments by years:")

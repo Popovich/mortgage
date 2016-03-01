@@ -37,7 +37,7 @@ class Test_test1(unittest.TestCase):
 
         m = mortgage.Mortgage(12.4, 12*20, datetime.date(2012, 4, 18))
         lst = defaultdict(list)
-        lst[(2016, 1)].append(mortgage.make_non_reg_payment(2016, 1, 15, 800000))
+        mortgage.add_non_reg_payment(lst, 18, 2016, 1, 15, 800000)
         self.compare_with_etalon('test_data/loan2.csv', m.calc(4900000, lst).payments)
 
     def test_loan_3(self):
@@ -45,8 +45,8 @@ class Test_test1(unittest.TestCase):
         m = mortgage.Mortgage(12.4, 12*20, datetime.date(2012, 4, 18))
 
         lst = defaultdict(list)
-        lst[(2016, 1)].append(mortgage.make_non_reg_payment(2016, 1, 15, 800000))
-        lst[(2016, 3)].append(mortgage.make_non_reg_payment(2016, 2, 18, 10000))
+        mortgage.add_non_reg_payment(lst, 18, 2016, 1, 15, 800000)
+        mortgage.add_non_reg_payment(lst, 18, 2016, 2, 18, 10000)
         self.compare_with_etalon('test_data/loan3.csv', m.calc(4900000, lst).payments)
 
 if __name__ == '__main__':
