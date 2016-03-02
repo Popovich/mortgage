@@ -185,7 +185,13 @@ def make_non_reg_payment(year, month, day, sum):
     return NonRegularPayment(datetime.date(year, month, day), Decimal(round(sum, 2)), 0, 0, 0)
 
 def add_non_reg_payment(payments, reg_pay_day, year, month, day, sum):
-    payments[(year, month if day < reg_pay_day else month + 1)].append(make_non_reg_payment(year, month, day, sum))
+    if day < reg_pay_day:
+        t = (year, month)
+    else:
+        d = datetime.date(year, month, 1)
+        d += relativedelta(months=1)
+        t = (d.year, d.month)
+    payments[t].append(make_non_reg_payment(year, month, day, sum))
 
 def calc_interest_payments(year, periods):
     s = 0
