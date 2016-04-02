@@ -214,10 +214,11 @@ def calc():
     initial_principal = 4900000
     total_months = 12*20
     initial_monthly_payment = m.calc_monthly_payment(initial_principal, total_months)
-    next_pay_date = datetime.date(2016, 3, 18)
+    next_pay_date = datetime.date(2016, 4, 18)
     non_reg_payments = defaultdict(list)
     add_non_reg_payment(non_reg_payments, start_date.day, 2016, 1, 15, 800000)
     add_non_reg_payment(non_reg_payments, start_date.day, 2016, 2, 18, 10000)
+    add_non_reg_payment(non_reg_payments, start_date.day, 2016, 3, 18, 80000)
 
     result = None
     while True:
