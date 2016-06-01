@@ -15,20 +15,27 @@ class Payment(object):
         self.interest_payment = interest_payment
         self.principal_payment = principal_payment
         self.current_principal = current_principal
+        self.not_used = False
 
 class RegularPayment(Payment):
     def __init__(self, date, payment, interest_payment, principal_payment, current_principal):
         return super().__init__(date, payment, interest_payment, principal_payment, current_principal)
 
     def __str__(self):
-        return '%s - %.2f - %.2f - %.2f - %.2f - regular' % (str(self.date), self.payment, self.interest_payment, self.principal_payment, self.current_principal)
+        if not self.not_used:
+            return '%s - %.2f - %.2f - %.2f - %.2f - regular' % (str(self.date), self.payment, self.interest_payment, self.principal_payment, self.current_principal)
+        else:
+            return '%s - %.2f - not used' % (str(self.date), self.payment) 
 
 class NonRegularPayment(Payment):
     def __init__(self, date, payment, interest_payment, principal_payment, current_principal):
         super().__init__(date, payment, interest_payment, principal_payment, current_principal)
 
     def __str__(self):
-        return '%s - %.2f - %.2f - %.2f - %.2f - non regular' % (str(self.date), self.payment, self.interest_payment, self.principal_payment, self.current_principal)
+        if not self.not_used:
+            return '%s - %.2f - %.2f - %.2f - %.2f - non regular' % (str(self.date), self.payment, self.interest_payment, self.principal_payment, self.current_principal)
+        else:
+            return '%s - %.2f - not used' % (str(self.date), self.payment) 
 
 class Period(object):
     def __init__(self, start, end):
@@ -127,6 +134,8 @@ class Mortgage(object):
                     result.year_interest_payments[non_reg_pay.date.year] += p
 
                     if non_reg_pay.payment < p:
+                        non_reg_pay.not_used = True
+                        result.payments[non_reg_pay.date].append(non_reg_pay)
                         pass # не хватает для выплаты процентов
                     else:
                         # обновим остаток долга с учётом процентов
@@ -214,11 +223,12 @@ def calc():
     initial_principal = 4900000
     total_months = 12*20
     initial_monthly_payment = m.calc_monthly_payment(initial_principal, total_months)
-    next_pay_date = datetime.date(2016, 4, 18)
+    next_pay_date = datetime.date(2016, 5, 18)
     non_reg_payments = defaultdict(list)
     add_non_reg_payment(non_reg_payments, start_date.day, 2016, 1, 15, 800000)
     add_non_reg_payment(non_reg_payments, start_date.day, 2016, 2, 18, 10000)
     add_non_reg_payment(non_reg_payments, start_date.day, 2016, 3, 18, 80000)
+    add_non_reg_payment(non_reg_payments, start_date.day, 2016, 4, 18, 16000)
 
     result = None
     while True:
@@ -228,7 +238,8 @@ def calc():
             break
 
         non_reg_payments[(date.year, date.month)].append(NonRegularPayment(next_pay_date, delta, 0, 0, 0))
-        
+
+        #if next_pay_date == datetime.date(next_pay_date.year, 4, 18):
         # учёт налогового вычета
         if next_pay_date == datetime.date(next_pay_date.year, 5, 18):
             v = round(result.year_interest_payments[next_pay_date.year - 1] * Decimal("0.13"), 2)
