@@ -223,13 +223,14 @@ def calc():
     initial_principal = 4900000
     total_months = 12*20
     initial_monthly_payment = m.calc_monthly_payment(initial_principal, total_months)
-    next_pay_date = datetime.date(2016, 5, 18)
+    next_pay_date = datetime.date(2016, 6, 18)
     non_reg_payments = defaultdict(list)
     add_non_reg_payment(non_reg_payments, start_date.day, 2016, 1, 15, 800000)
     add_non_reg_payment(non_reg_payments, start_date.day, 2016, 2, 18, 10000)
     add_non_reg_payment(non_reg_payments, start_date.day, 2016, 3, 18, 80000)
     add_non_reg_payment(non_reg_payments, start_date.day, 2016, 4, 18, 16000)
 
+    tax_deduction = None#datetime.date(next_pay_date.year, 5, 18) # учёт налогового вычета
     result = None
     while True:
         result = m.calc(initial_principal, non_reg_payments)
@@ -239,9 +240,7 @@ def calc():
 
         non_reg_payments[(date.year, date.month)].append(NonRegularPayment(next_pay_date, delta, 0, 0, 0))
 
-        #if next_pay_date == datetime.date(next_pay_date.year, 4, 18):
-        # учёт налогового вычета
-        if next_pay_date == datetime.date(next_pay_date.year, 5, 18):
+        if tax_deduction and next_pay_date == tax_deduction:
             v = round(result.year_interest_payments[next_pay_date.year - 1] * Decimal("0.13"), 2)
             v = math.ceil(v / 1000) * 1000
             non_reg_payments[(date.year, date.month)].append(NonRegularPayment(next_pay_date, v, 0, 0, 0))
