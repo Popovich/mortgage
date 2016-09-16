@@ -216,25 +216,19 @@ def diff_dates(dt1, dt2):
     return diff.years * 12 + diff.months
 
 # каждый месяц добавляем в досрочку разницу между текущим ежемесячным платежём и первоначальным
-def calc():
+def calc_auto_4dp_v1(non_reg_payments, next_pay_date, tax_deduction):
 
-    start_date = datetime.date(2012, 4, 18)
+    start_date = datetime.date(2012, 4, 18) # дата получения кредита
+    total_months = 12*20 # сколько платить
+    initial_principal = 4900000 # долг
+
     m = Mortgage(12.4, 12*20, start_date)
-    initial_principal = 4900000
-    total_months = 12*20
     initial_monthly_payment = m.calc_monthly_payment(initial_principal, total_months)
-    next_pay_date = datetime.date(2016, 6, 18)
-    non_reg_payments = defaultdict(list)
-    add_non_reg_payment(non_reg_payments, start_date.day, 2016, 1, 15, 800000)
-    add_non_reg_payment(non_reg_payments, start_date.day, 2016, 2, 18, 10000)
-    add_non_reg_payment(non_reg_payments, start_date.day, 2016, 3, 18, 80000)
-    add_non_reg_payment(non_reg_payments, start_date.day, 2016, 4, 18, 16000)
 
-    tax_deduction = None#datetime.date(next_pay_date.year, 5, 18) # учёт налогового вычета
     result = None
     while True:
         result = m.calc(initial_principal, non_reg_payments)
-        date, delta, principal = sim(m, initial_monthly_payment, result.payments, next_pay_date)
+        date, delta = sim_auto_4dp(initial_monthly_payment, result.payments, next_pay_date)
         if date is None:
             break
 
@@ -249,18 +243,21 @@ def calc():
 
     return result
 
-def sim(mortgage, initial_monthly_payment, payments, date):
+def sim_auto_4dp(initial_monthly_payment, payments, start_date):
 
-    pays = payments.get(date, [])
+    pays = payments.get(start_date, [])
     for pay in pays:
         if isinstance(pay, RegularPayment):
-            delta = initial_monthly_payment - pay.payment
+            delta = initial_monthly_payment - pay.payment # разница между изначальным платёжом и сколько теперь платим
             delta = math.ceil(delta / 1000) * 1000 # округлим до тысячи в большую сторону
             if delta > pay.current_principal: # осталось заплатить меньше, чем получившаяся разница
                 delta = pay.current_principal
-            next_pay_date = pay.date + relativedelta(months=1)
-            return next_pay_date, delta, pay.current_principal
-    return None, None, None
+            next_pay_date = pay.date + relativedelta(months=1) # следующий платёж + 1 месяц
+            return next_pay_date, delta
+    return None, None
+
+def calc_auto_4dp_v2(non_reg_payments, next_pay_date, tax_deduction):
+    pass
 
 def print_payments(payments):
     s1 = 0 # сколько уплатим банку по процентам
@@ -272,9 +269,24 @@ def print_payments(payments):
 
 if __name__ == '__main__':
 
-    # 2024-09-18 - best result
-    # 4587670.65 - total interests payment
-    r = calc()
+    start_date = datetime.date(2016, 10, 18) # дата, с которой начинаем авто ЧДП
+    regular_date_pay = 18 # день платежа по графику
+
+    # уже совершённые ЧДП
+    non_reg_payments = defaultdict(list)
+    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 1, 15, 800000)
+    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 2, 18, 10000)
+    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 3, 18, 80000)
+    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 4, 18, 16000)
+    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 6, 9,  130000)
+    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 6, 14, 51182.53)
+    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 8, 18, 15000)
+    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 9, 16, 55798.25)
+
+    #add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 9, 26, 20588.90)
+    #add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 10, 11, 28968.55 + 107.57)
+
+    r = calc_auto_4dp_v1(non_reg_payments, next_pay_date=start_date, tax_deduction=None)
     print_payments(r.payments)
     print("Interest payments by years:")
     for k, v in sorted(r.year_interest_payments.items()):
