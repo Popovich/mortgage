@@ -53,13 +53,16 @@ class Result(object):
         self.year_interest_payments = defaultdict(Decimal)
 
 class Mortgage(object):
-    def __init__(self, interest, months, start_date):
+    def __init__(self, principal, interest, months, start_date):
+        self.principal = principal
         self.interest = interest
         self.interest_rate = Decimal(interest / 100)
         self.monthly_interest = Decimal(self.interest_rate / 12)
 
         # срок кредита
         self.total_months = months
+
+        self.initial_monthly_payment = self.calc_monthly_payment(self.principal, self.total_months)
 
         # дата получения кредита
         self.start_date = start_date
@@ -68,9 +71,11 @@ class Mortgage(object):
 
         self.leap_years_cache = [366 if calendar.isleap(self.start_date.year + y) else 365 for y in range(0, int(self.total_months / 12))]
 
+    # посчитать ежемесячный платёж
     def calc_monthly_payment(self, principal, months):
         return Decimal(round(principal * (self.monthly_interest / (1 - (1 + self.monthly_interest) ** (- months))), 2))
 
+    # посчитать проценты за указанный период для указанной суммы долга
     def calc_interest_payment(self, pay_date, prev_pay_date, principal):
         # первый месяц в году, т.е. январь
         # в этом случае надо немного по-другому считать
@@ -98,8 +103,8 @@ class Mortgage(object):
     def is_pay_in_regular_date(self, pay):
         return pay.date.day == self.start_date.day
 
-    def calc(self, principal, predefined_payments = {}, initial_month = None):
-        current_principal = principal
+    def calc(self, predefined_payments = {}, initial_month = None):
+        current_principal = self.principal
         monthly_payment = self.calc_monthly_payment(current_principal, self.total_months)
 
         result = Result()
@@ -216,30 +221,23 @@ def diff_dates(dt1, dt2):
     return diff.years * 12 + diff.months
 
 # каждый месяц добавляем в досрочку разницу между текущим ежемесячным платежём и первоначальным
-def calc_auto_4dp_v1(non_reg_payments, next_pay_date, tax_deduction):
+def calc_auto_4dp_v1(mortgage, non_reg_payments, next_pay_date, stop_date=None):
 
-    start_date = datetime.date(2012, 4, 18) # дата получения кредита
-    total_months = 12*20 # сколько платить
-    initial_principal = 4900000 # долг
-
-    m = Mortgage(12.4, 12*20, start_date)
-    initial_monthly_payment = m.calc_monthly_payment(initial_principal, total_months)
+    initial_monthly_payment = mortgage.initial_monthly_payment
 
     result = None
     while True:
-        result = m.calc(initial_principal, non_reg_payments)
+        result = mortgage.calc(non_reg_payments)
         date, delta = sim_auto_4dp(initial_monthly_payment, result.payments, next_pay_date)
         if date is None:
             break
 
         non_reg_payments[(date.year, date.month)].append(NonRegularPayment(next_pay_date, delta, 0, 0, 0))
 
-        if tax_deduction and next_pay_date == tax_deduction:
-            v = round(result.year_interest_payments[next_pay_date.year - 1] * Decimal("0.13"), 2)
-            v = math.ceil(v / 1000) * 1000
-            non_reg_payments[(date.year, date.month)].append(NonRegularPayment(next_pay_date, v, 0, 0, 0))
-
         next_pay_date = date
+
+        if next_pay_date == stop_date:
+            break
 
     return result
 
@@ -248,7 +246,7 @@ def sim_auto_4dp(initial_monthly_payment, payments, start_date):
     pays = payments.get(start_date, [])
     for pay in pays:
         if isinstance(pay, RegularPayment):
-            delta = initial_monthly_payment - pay.payment # разница между изначальным платёжом и сколько теперь платим
+            delta = initial_monthly_payment - pay.payment # разница между изначальным платежом и сколько теперь платим
             delta = math.ceil(delta / 1000) * 1000 # округлим до тысячи в большую сторону
             if delta > pay.current_principal: # осталось заплатить меньше, чем получившаяся разница
                 delta = pay.current_principal
@@ -256,8 +254,57 @@ def sim_auto_4dp(initial_monthly_payment, payments, start_date):
             return next_pay_date, delta
     return None, None
 
-def calc_auto_4dp_v2(non_reg_payments, next_pay_date, tax_deduction):
-    pass
+# второй вариант ЧДП
+# вносим платежи два раза за рассчётный период (26-го числа ЧДП и 18-го числа всё что осталось)
+def calc_auto_4dp_v2(mortgage, non_reg_payments, next_pay_date):
+
+    if next_pay_date.day != mortgage.start_date.day:
+        raise RuntimeError("next_pay_date.day != mortgage.start_date.day")
+
+    while True:
+        r = calc_auto_4dp_v1(mortgage, non_reg_payments, next_pay_date, next_pay_date + relativedelta(months=2))
+
+        last_pay_date = next_pay_date - relativedelta(months=1)
+        last_pay = r.payments.get(last_pay_date, [None])[0]
+        if not last_pay:
+            return r
+
+        regular = r.payments.get(next_pay_date, [])[0]
+        non_regular = r.payments.get(next_pay_date, [])[1]
+
+        old_total_payment = regular.principal_payment + regular.interest_payment + non_regular.principal_payment
+        old_total_principal_payment = regular.principal_payment + non_regular.principal_payment
+
+        new_pay_date = next_pay_date - relativedelta(months=1) + relativedelta(days=8) # 26 число
+
+        diff = Decimal(0.0)
+        while True:
+
+            cur_total_principal_payment = old_total_principal_payment + diff
+
+            # проценты с 18-го по 26-е
+            interest_p1 = mortgage.calc_interest_payment(new_pay_date, last_pay_date, last_pay.current_principal)
+            principal_p1 = cur_total_principal_payment
+
+            # проценты с 26-го по 18-ое след месяца
+            interest_p2 = mortgage.calc_interest_payment(regular.date, new_pay_date, last_pay.current_principal - principal_p1)
+            principal_p2 = 0
+
+            new_total_payment = interest_p1 + principal_p1 + interest_p2 + principal_p2
+            new_total_principal_payment = principal_p1 + principal_p2
+
+            if new_total_payment < old_total_payment:
+                diff += old_total_payment - new_total_payment
+                continue
+
+            break
+
+        add_non_reg_payment(non_reg_payments, mortgage.start_date.day, new_pay_date.year, new_pay_date.month, new_pay_date.day, interest_p1 + principal_p1)
+
+        c = regular.date + relativedelta(months=1)
+        del non_reg_payments[(c.year, c.month)]
+
+        next_pay_date += relativedelta(months=1)
 
 def print_payments(payments):
     s1 = 0 # сколько уплатим банку по процентам
@@ -267,26 +314,44 @@ def print_payments(payments):
             print(p)
     print("Total interest payment: %s - %% = %s" % (s1, round(s1*Decimal("0.13"), 2)))
 
+def get_auto_4dp_start_date(mortgage, non_reg_payments):
+
+    max = (0, 0)
+    for p in non_reg_payments.keys():
+        if p > max:
+            max = p
+
+    return datetime.date(max[0], max[1], m.start_date.day) + relativedelta(months=1)
+
 if __name__ == '__main__':
 
-    start_date = datetime.date(2016, 10, 18) # дата, с которой начинаем авто ЧДП
-    regular_date_pay = 18 # день платежа по графику
+    m = Mortgage(principal=4900000, interest=12.4, months=12*20, start_date=datetime.date(2012, 4, 18))
 
     # уже совершённые ЧДП
     non_reg_payments = defaultdict(list)
-    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 1, 15, 800000)
-    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 2, 18, 10000)
-    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 3, 18, 80000)
-    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 4, 18, 16000)
-    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 6, 9,  130000)
-    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 6, 14, 51182.53)
-    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 8, 18, 15000)
-    add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 9, 16, 55798.25)
+    add_non_reg_payment(non_reg_payments, m.start_date.day, 2016, 1, 15, 800000)
+    add_non_reg_payment(non_reg_payments, m.start_date.day, 2016, 2, 18, 10000)
+    add_non_reg_payment(non_reg_payments, m.start_date.day, 2016, 3, 18, 80000)
+    add_non_reg_payment(non_reg_payments, m.start_date.day, 2016, 4, 18, 16000)
+    add_non_reg_payment(non_reg_payments, m.start_date.day, 2016, 6, 9,  130000)
+    add_non_reg_payment(non_reg_payments, m.start_date.day, 2016, 6, 14, Decimal(51182.53))
+    add_non_reg_payment(non_reg_payments, m.start_date.day, 2016, 8, 18, 15000)
+    add_non_reg_payment(non_reg_payments, m.start_date.day, 2016, 9, 16, Decimal(55798.25))
+
+    auto_4dp_start_date = get_auto_4dp_start_date(m, non_reg_payments) # дата, с которой начинаем авто ЧДП
 
     #add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 9, 26, 20588.90)
     #add_non_reg_payment(non_reg_payments, regular_date_pay, 2016, 10, 11, 28968.55 + 107.57)
 
-    r = calc_auto_4dp_v1(non_reg_payments, next_pay_date=start_date, tax_deduction=None)
+    # classic
+    #r = m.calc(non_reg_payments)
+
+    # 4dp v1
+    #r = calc_auto_4dp_v1(m, non_reg_payments, next_pay_date=auto_4dp_start_date)
+
+    # 4dp v2
+    r = calc_auto_4dp_v2(m, non_reg_payments, next_pay_date=auto_4dp_start_date)
+
     print_payments(r.payments)
     print("Interest payments by years:")
     for k, v in sorted(r.year_interest_payments.items()):
